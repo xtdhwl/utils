@@ -1,0 +1,51 @@
+
+public class Log{
+  
+    private static final String LOG_TAG_REQUEST = "Renren-SDK-Request";
+  
+	  private static final String LOG_TAG_RESPONSE = "Renren-SDK-Response";
+
+  /**
+   * clear the log
+	 */
+	public synchronized void clear() {
+		try {
+
+			Runtime.getRuntime().exec("logcat -c + "
+					+ LOG_TAG_REQUEST + ":I " 
+					+ LOG_TAG_RESPONSE + ":I *:S");
+		} catch (IOException e) {
+		}
+	}
+
+  /**
+   * Get the log using the specified filter 
+	 * 
+	 * @param tag 
+	 * @return
+	 */
+	public synchronized String getLog() { 
+		StringBuffer logger = new StringBuffer();
+		try {
+			Process process = Runtime.getRuntime().exec("logcat -v time + "
+					+ LOG_TAG_REQUEST + ":I " 
+					+ LOG_TAG_RESPONSE + ":I *:S");
+			BufferedReader bufferedReader = new BufferedReader(
+					new InputStreamReader(process.getInputStream()), 1024);
+			Thread thread = new Thread(new LogFinalizer(process));
+			thread.start();
+			String line = bufferedReader.readLine();
+			while (line != null && line.length() != 0) {
+				logger.append(parseLog(line));
+				line = bufferedReader.readLine();
+			}
+			if(bufferedReader != null) {
+				bufferedReader.close();
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return logger.toString();
+	}
+
+}
