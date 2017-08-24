@@ -1,0 +1,198 @@
+package com.touzi.btcdemo;
+
+import android.os.Handler;
+import android.os.Message;
+
+import java.util.ArrayDeque;
+import java.util.Queue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * Created by xtdhwl on 24/08/2017.
+ */
+
+// 来的58btc写的任务类, 没有测试只留做纪念
+ //点击事件
+ //    public void startClicker(View view) {
+ //
+ //       new $().sub((a) -> {    //a sub task
+ //            SystemClock.sleep(1000 * 5);
+ //            return "ok";
+ //        }).main((b) -> {                    //b mian task
+ //            String text = (String) b;
+ //            textView.setText(text);
+ //            return null;
+ //        }).sub((c) -> {                    //c sub task
+ //           SystemClock.sleep(1000 * 3);
+ //            if(isException) {
+ //                int result = 1 / 0;
+ //            }
+ //            return null;
+ //        }).exec((ex) -> {                //end
+ //           if (ex != null) {
+ //                //end error
+ //                Toast.makeText(getApplicationContext(), ex.getMessage(), Toast.LENGTH_LONG).show();
+ //                textView.setText("error");
+ //            } else {
+ //                //end nomal
+ //                textView.setText("end");
+ //            }
+ //       }); 
+ //    }
+public class $ {
+    private Queue<$.TaskWarp> queue = new ArrayDeque();
+    private $.Workers workers = new $.Workers();
+    private $.TaskListener listener;
+    private boolean sentry = true; //false end
+
+    /**
+     * 任务
+     *
+     * @param <T>
+     */
+    public interface Task<T> {
+        T call(Object obj);
+    }
+
+    /**
+     * 任务监听
+     */
+    public interface TaskListener {
+        void onComple(Exception ex);
+    }
+
+
+    private Handler handler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            if (msg.what == 0) {
+                //next task run
+                if (queue.isEmpty()) {  //正常运行完任务
+                    doCallback(null);
+                } else {
+                    try {
+                        $.TaskWarp poll = queue.poll();
+                        //msg.obj->上一个任务, 第一次执行为空
+                        poll.param = msg.obj != null ? (($.TaskWarp) msg.obj).result : null;
+                        if (poll.threadFlag == $.TaskWarp.Thread_Main) {
+                            workers.onMain(poll);
+                        } else if (poll.threadFlag == $.TaskWarp.Thread_Sub) {
+                            workers.onSub(poll);
+                        } else {
+                            throw new IllegalArgumentException("worker thread falg no support");
+                        }
+                    } catch (IllegalArgumentException e) {
+                        e.printStackTrace();
+                        handler.obtainMessage(1, e).sendToTarget();;  //error
+                    }
+                }
+            } else if (msg.what == 1) {
+                //exception
+                queue.clear();
+                workers.close();
+                doCallback((Exception) msg.obj);
+            }
+        }
+    };
+
+    /**
+     * 添加到主线程工作栈运行
+     *
+     * @param task
+     * @return
+     */
+    public $ main($.Task task) {
+        if (!sentry)
+            new IllegalStateException("task manager runing, Do not add a task");
+        $.TaskWarp taskWarp = new $.TaskWarp(task);
+        taskWarp.threadFlag = $.TaskWarp.Thread_Main;
+        queue.add(taskWarp);
+        return this;
+    }
+
+    /**
+     * 添加到子线程工作栈运行
+     *
+     * @param task
+     * @return
+     */
+    public $ sub($.Task task) {
+        if (!sentry)
+            new IllegalStateException("task manager runing, Do not add a task");
+        $.TaskWarp taskWarp = new $.TaskWarp(task);
+        taskWarp.threadFlag = $.TaskWarp.Thread_Sub;
+        queue.add(taskWarp);
+        return this;
+    }
+
+    /**
+     * 执行
+     */
+    public void exec($.TaskListener listener) {
+        sentry = false;
+        this.listener = listener;
+        handler.sendEmptyMessage(0);
+    }
+
+    //回调
+    private void doCallback(Exception ex) {
+        if (this.listener != null) {
+            this.listener.onComple(ex);
+        }
+    }
+
+    //任务包装类
+    class TaskWarp {
+        // 1 main 2 sub
+        public static final int Thread_Main = 1;
+        public static final int Thread_Sub = 2;
+        public int threadFlag = 1;      //任务运行线程标识
+        public $.Task task;               //当前任务
+        public Object param;            //任务参数
+        public Object result;           //任务结果
+
+        public TaskWarp($.Task task) {
+            this.task = task;
+        }
+    }
+
+    //任务工作
+    class Workers {
+        //线程池
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+
+        //在主线程运行
+        public void onMain($.TaskWarp taskWarp) {
+            process(taskWarp);
+        }
+
+        //在子线程运行
+        public void onSub($.TaskWarp taskWarp) {
+            executorService.execute(() -> {
+                process(taskWarp);
+
+            });
+        }
+
+        //执行任务
+        private void process($.TaskWarp taskWarp) {
+            try {
+                if (!Thread.interrupted()) {
+                    taskWarp.result = taskWarp.task.call(taskWarp.param);
+                    handler.obtainMessage(0, taskWarp).sendToTarget();
+                    return; // end
+                }
+                throw new IllegalStateException("task call error, thread is interrupted .");
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                handler.obtainMessage(1, ex).sendToTarget();
+            }
+        }
+
+        //停止任务
+        public void close() {
+            executorService.shutdownNow();
+        }
+    }
+}
