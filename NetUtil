@@ -1,0 +1,34 @@
+//网络工具类
+
+
+public class NetUtil{
+
+
+
+  /**
+  * 获取运营商名称. (反编译快手代码)
+  */
+   public static String getSimOperatorName(Context paramContext)
+  {
+    Object localObject = (TelephonyManager)paramContext.getSystemService("phone");
+    paramContext = ((TelephonyManager)localObject).getSimOperator();
+    localObject = ((TelephonyManager)localObject).getSimOperatorName();
+    if (!TextUtils.isEmpty((CharSequence)localObject)) {
+      return (String)localObject;
+    }
+    if (paramContext != null)
+    {
+      if ((paramContext.equals("46000")) || (paramContext.equals("46002")) || (paramContext.equals("46007"))) {
+        return "中国移动";
+      }
+      if ((paramContext.equals("46001")) || (paramContext.equals("46009"))) {
+        return "中国联通";
+      }
+      if (paramContext.equals("46003")) {
+        return "中国电信";
+      }
+      return paramContext;
+    }
+    return "";
+  }
+}
